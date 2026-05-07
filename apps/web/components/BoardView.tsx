@@ -39,11 +39,17 @@ import {
 const TOKEN_KEY = "beacon_token";
 const PRIORITY_OPTIONS = [
   { value: "", label: "未设置", className: "border-slate-200 bg-slate-50 text-slate-500" },
-  { value: "重要且紧急", label: "重要且紧急", className: "border-red-200 bg-red-50 text-red-700" },
-  { value: "重要不紧急", label: "重要不紧急", className: "border-amber-200 bg-amber-50 text-amber-700" },
-  { value: "紧急不重要", label: "紧急不重要", className: "border-blue-200 bg-blue-50 text-blue-700" },
-  { value: "不重要不紧急", label: "不重要不紧急", className: "border-slate-200 bg-slate-100 text-slate-700" }
+  { value: "P0", label: "P0", className: "border-red-200 bg-red-50 text-red-700" },
+  { value: "P1", label: "P1", className: "border-orange-200 bg-orange-50 text-orange-700" },
+  { value: "P2", label: "P2", className: "border-sky-200 bg-sky-50 text-sky-700" },
+  { value: "P3", label: "P3", className: "border-slate-200 bg-slate-100 text-slate-700" }
 ];
+const LEGACY_PRIORITY_MAP: Record<string, string> = {
+  "重要且紧急": "P0",
+  "重要不紧急": "P1",
+  "紧急不重要": "P2",
+  "不重要不紧急": "P3"
+};
 
 export function BoardView({ boardId }: { boardId: number }) {
   const router = useRouter();
@@ -52,6 +58,7 @@ export function BoardView({ boardId }: { boardId: number }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("all");
   const [selectedCardId, setSelectedCardId] = useState<number | null>(null);
   const [draggingCardId, setDraggingCardId] = useState<number | null>(null);
   const dragCardRef = useRef<{ cardId: number } | null>(null);
@@ -120,15 +127,17 @@ export function BoardView({ boardId }: { boardId: number }) {
     return board.lists.map((list) => ({
       ...list,
       cards: (list.cards ?? []).filter((card) => {
+        const normalizedPriority = normalizePriority(card.priority ?? "");
         const matchesText =
           term === "" ||
           card.title.toLowerCase().includes(term) ||
           card.description.toLowerCase().includes(term) ||
           card.summary.toLowerCase().includes(term);
-        return matchesText;
+        const matchesPriority = priorityFilter === "all" || normalizedPriority === priorityFilter;
+        return matchesText && matchesPriority;
       })
     }));
-  }, [board, search]);
+  }, [board, priorityFilter, search]);
 
   async function mutate(path: string, body: unknown, method: "POST" | "PATCH" | "DELETE" = "PATCH") {
     if (!token || !board) {
@@ -256,6 +265,22 @@ export function BoardView({ boardId }: { boardId: number }) {
               placeholder="搜索卡片"
               className="h-10 w-full rounded-md border border-white/20 bg-white pl-9 pr-3 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-white/50"
             />
+          </label>
+          <label className="relative min-w-[150px]">
+            <Target className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <select
+              value={priorityFilter}
+              onChange={(event) => setPriorityFilter(event.target.value)}
+              className="h-10 w-full appearance-none rounded-md border border-white/20 bg-white pl-9 pr-8 text-sm font-medium text-slate-900 outline-none focus:ring-2 focus:ring-white/50"
+            >
+              <option value="all">全部优先级</option>
+              {PRIORITY_OPTIONS.filter((option) => option.value).map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <ChevronRight className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 rotate-90 -translate-y-1/2 text-slate-400" />
           </label>
           <MemberStrip members={board.members ?? []} />
         </div>
@@ -504,17 +529,16 @@ function CardTile({
               {formatShortDate(card.dueDate)}
             </span>
           ) : null}
+          <span className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs font-medium ${statusClass}`}>
+            <StatusIcon className="h-3.5 w-3.5" />
+            {card.delayed ? "已延期" : "未延期"}
+          </span>
           {card.comments?.length ? (
             <span className="inline-flex h-7 items-center gap-1 rounded-md bg-slate-100 px-2 text-xs text-slate-600">
               <MessageSquare className="h-3.5 w-3.5" />
               {card.comments.length}
             </span>
           ) : null}
-        </div>
-
-        <div className={`mt-3 inline-flex h-8 items-center gap-1.5 rounded-md border px-2 text-xs font-medium ${statusClass}`}>
-          <StatusIcon className="h-3.5 w-3.5" />
-          {card.delayed ? "已延期" : "未延期"}
         </div>
 
         {card.members?.length ? (
@@ -662,7 +686,7 @@ function CardModal({
   const [title, setTitle] = useState(card.title);
   const [description, setDescription] = useState(card.description);
   const [dueDate, setDueDate] = useState(toDateInput(card.dueDate));
-  const [priority, setPriority] = useState(card.priority ?? "");
+  const [priority, setPriority] = useState(normalizePriority(card.priority ?? ""));
   const [summary, setSummary] = useState(card.summary ?? "");
   const [startDate, setStartDate] = useState(toDateInput(card.startDate));
   const [completedAt, setCompletedAt] = useState(toDateInput(card.completedAt));
@@ -694,7 +718,7 @@ function CardModal({
     setTitle(card.title);
     setDescription(card.description);
     setDueDate(toDateInput(card.dueDate));
-    setPriority(card.priority ?? "");
+    setPriority(normalizePriority(card.priority ?? ""));
     setSummary(card.summary ?? "");
     setStartDate(toDateInput(card.startDate));
     setCompletedAt(toDateInput(card.completedAt));
@@ -1082,7 +1106,7 @@ function CardModal({
               className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-red-200 text-sm font-semibold text-red-700 hover:bg-red-50"
             >
               <Trash2 className="h-4 w-4" />
-              归档卡片
+              删除卡片
             </button>
           </aside>
         </div>
@@ -1098,7 +1122,7 @@ function PrioritySelect({ value, onChange }: { value: string; onChange: (value: 
     <label className="block">
       <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
         <Target className="h-4 w-4 text-teal-700" />
-        重要紧急程度
+        优先级
       </span>
       <div className={`mt-1 rounded-md border px-2 py-1 ${current.className}`}>
         <select
@@ -1123,11 +1147,16 @@ function PriorityPill({ value }: { value: string }) {
 }
 
 function priorityStyle(value: string) {
-  return PRIORITY_OPTIONS.find((option) => option.value === value) ?? {
+  const normalizedValue = normalizePriority(value);
+  return PRIORITY_OPTIONS.find((option) => option.value === normalizedValue) ?? {
     value,
     label: value,
     className: "border-slate-200 bg-slate-50 text-slate-700"
   };
+}
+
+function normalizePriority(value: string) {
+  return LEGACY_PRIORITY_MAP[value] ?? value;
 }
 
 function InviteMember({
