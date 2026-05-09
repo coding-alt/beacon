@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DragEvent, FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -37,6 +37,9 @@ import {
 } from "@/lib/api";
 
 const TOKEN_KEY = "beacon_token";
+const LIST_DRAG_TYPE = "application/x-beacon-list";
+const CARD_DRAG_TYPE = "application/x-beacon-card";
+type ListDropTarget = number | "end" | null;
 const PRIORITY_OPTIONS = [
   { value: "", label: "未设置", className: "border-slate-200 bg-slate-50 text-slate-500" },
   { value: "P0", label: "P0", className: "border-red-200 bg-red-50 text-red-700" },
@@ -61,7 +64,10 @@ export function BoardView({ boardId }: { boardId: number }) {
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [selectedCardId, setSelectedCardId] = useState<number | null>(null);
   const [draggingCardId, setDraggingCardId] = useState<number | null>(null);
+  const [draggingListId, setDraggingListId] = useState<number | null>(null);
+  const [listDropTargetId, setListDropTargetId] = useState<ListDropTarget>(null);
   const dragCardRef = useRef<{ cardId: number } | null>(null);
+  const dragListRef = useRef<{ listId: number } | null>(null);
 
   const loadBoard = useCallback(
     async (authToken: string, showSpinner = true) => {
@@ -160,6 +166,34 @@ export function BoardView({ boardId }: { boardId: number }) {
     await mutate(`/boards/${boardId}/cards`, { listId, title }, "POST");
   }
 
+  async function moveList(listId: number, beforeListId?: number) {
+    if (!board || !token) {
+      return;
+    }
+
+    const next = moveListLocally(board, listId, beforeListId);
+    if (!next) {
+      return;
+    }
+    setBoard(next);
+
+    try {
+      const updated = await apiRequest<Board>(`/boards/${boardId}/lists/reorder`, token, {
+        method: "PATCH",
+        body: JSON.stringify({
+          lists: (next.lists ?? []).map((list) => ({
+            id: list.id,
+            position: list.position
+          }))
+        })
+      });
+      setBoard(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "无法移动列表");
+      void loadBoard(token, false);
+    }
+  }
+
   async function moveCard(cardId: number, targetListId: number, beforeCardId?: number) {
     if (!board || !token) {
       return;
@@ -192,6 +226,34 @@ export function BoardView({ boardId }: { boardId: number }) {
   function clearCardDrag() {
     dragCardRef.current = null;
     setDraggingCardId(null);
+  }
+
+  function clearListDrag() {
+    dragListRef.current = null;
+    setDraggingListId(null);
+    setListDropTargetId(null);
+  }
+
+  function handleListPlaceholderDragOver(event: DragEvent, target: Exclude<ListDropTarget, null>) {
+    if (!hasDragType(event, LIST_DRAG_TYPE)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setListDropTargetId(target);
+  }
+
+  function handleListPlaceholderDrop(event: DragEvent, beforeListId?: number) {
+    if (!hasDragType(event, LIST_DRAG_TYPE)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const dragged = dragListRef.current;
+    if (dragged) {
+      void moveList(dragged.listId, beforeListId);
+    }
+    clearListDrag();
   }
 
   if (loading) {
@@ -292,30 +354,78 @@ export function BoardView({ boardId }: { boardId: number }) {
         </div>
       ) : null}
 
-      <section className="beacon-scrollbar flex flex-1 gap-4 overflow-x-auto px-4 py-5">
+      <section
+        className="beacon-scrollbar flex flex-1 gap-4 overflow-x-auto px-4 py-5"
+        onDragOver={(event) => {
+          if (hasDragType(event, LIST_DRAG_TYPE)) {
+            event.preventDefault();
+            setListDropTargetId("end");
+          }
+        }}
+        onDrop={(event) => {
+          if (!hasDragType(event, LIST_DRAG_TYPE)) {
+            return;
+          }
+          event.preventDefault();
+          const dragged = dragListRef.current;
+          if (dragged) {
+            void moveList(dragged.listId);
+          }
+          clearListDrag();
+        }}
+      >
         {filteredLists.map((list) => (
-          <BoardList
-            key={list.id}
-            list={list}
-            draggingCardId={draggingCardId}
-            onCreateCard={createCard}
-            onOpenCard={setSelectedCardId}
-            onDeleteList={(listId) => void mutate(`/lists/${listId}/permanent`, null, "DELETE")}
-            onRenameList={(listId, name) => void mutate(`/lists/${listId}`, { name })}
-            onDropCard={(targetListId, beforeCardId) => {
-              const dragged = dragCardRef.current;
-              if (dragged) {
-                void moveCard(dragged.cardId, targetListId, beforeCardId);
-              }
-              clearCardDrag();
-            }}
-            onDragCardStart={(cardId) => {
-              dragCardRef.current = { cardId };
-              setDraggingCardId(cardId);
-            }}
-            onDragCardEnd={clearCardDrag}
-          />
+          <Fragment key={list.id}>
+            {draggingListId != null && listDropTargetId === list.id && draggingListId !== list.id ? (
+              <ListDropPlaceholder
+                onDragOver={(event) => handleListPlaceholderDragOver(event, list.id)}
+                onDrop={(event) => handleListPlaceholderDrop(event, list.id)}
+              />
+            ) : null}
+            <BoardList
+              list={list}
+              draggingCardId={draggingCardId}
+              draggingListId={draggingListId}
+              isListDropTarget={listDropTargetId === list.id && draggingListId !== list.id}
+              onCreateCard={createCard}
+              onOpenCard={setSelectedCardId}
+              onDeleteList={(listId) => void mutate(`/lists/${listId}/permanent`, null, "DELETE")}
+              onRenameList={(listId, name) => void mutate(`/lists/${listId}`, { name })}
+              onDragListOver={(targetListId) => setListDropTargetId(targetListId)}
+              onDropListBefore={(targetListId) => {
+                const dragged = dragListRef.current;
+                if (dragged) {
+                  void moveList(dragged.listId, targetListId);
+                }
+                clearListDrag();
+              }}
+              onDragListStart={(listId) => {
+                dragListRef.current = { listId };
+                setDraggingListId(listId);
+                setListDropTargetId(null);
+              }}
+              onDragListEnd={clearListDrag}
+              onDropCard={(targetListId, beforeCardId) => {
+                const dragged = dragCardRef.current;
+                if (dragged) {
+                  void moveCard(dragged.cardId, targetListId, beforeCardId);
+                }
+                clearCardDrag();
+              }}
+              onDragCardStart={(cardId) => {
+                dragCardRef.current = { cardId };
+                setDraggingCardId(cardId);
+              }}
+              onDragCardEnd={clearCardDrag}
+            />
+          </Fragment>
         ))}
+        {draggingListId != null && listDropTargetId === "end" ? (
+          <ListDropPlaceholder
+            onDragOver={(event) => handleListPlaceholderDragOver(event, "end")}
+            onDrop={(event) => handleListPlaceholderDrop(event)}
+          />
+        ) : null}
         <CreateListColumn onCreate={createList} />
       </section>
 
@@ -336,20 +446,32 @@ export function BoardView({ boardId }: { boardId: number }) {
 function BoardList({
   list,
   draggingCardId,
+  draggingListId,
+  isListDropTarget,
   onCreateCard,
   onOpenCard,
   onDeleteList,
   onRenameList,
+  onDragListOver,
+  onDropListBefore,
+  onDragListStart,
+  onDragListEnd,
   onDropCard,
   onDragCardStart,
   onDragCardEnd
 }: {
   list: List;
   draggingCardId: number | null;
+  draggingListId: number | null;
+  isListDropTarget: boolean;
   onCreateCard: (listId: number, title: string) => Promise<void>;
   onOpenCard: (cardId: number) => void;
   onDeleteList: (listId: number) => void;
   onRenameList: (listId: number, name: string) => void;
+  onDragListOver: (targetListId: number) => void;
+  onDropListBefore: (targetListId: number) => void;
+  onDragListStart: (listId: number) => void;
+  onDragListEnd: () => void;
   onDropCard: (targetListId: number, beforeCardId?: number) => void;
   onDragCardStart: (cardId: number) => void;
   onDragCardEnd: () => void;
@@ -357,6 +479,7 @@ function BoardList({
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(list.name);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setName(list.name);
@@ -388,12 +511,48 @@ function BoardList({
 
   return (
     <div
-      className="flex h-fit max-h-[calc(100vh-185px)] w-80 shrink-0 flex-col overflow-hidden rounded-md border border-slate-200 bg-slate-100 shadow-sm"
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={() => onDropCard(list.id)}
+      ref={listRef}
+      className={`flex h-fit max-h-[calc(100vh-185px)] w-80 shrink-0 flex-col overflow-hidden rounded-md border border-slate-200 bg-slate-100 shadow-sm transition ${
+        draggingListId === list.id ? "scale-[0.98] border-teal-300 opacity-45 shadow-none" : ""
+      } ${
+        isListDropTarget ? "ring-2 ring-teal-500 ring-offset-2 ring-offset-slate-100" : ""
+      }`}
+      onDragOver={(event) => {
+        if (hasDragType(event, LIST_DRAG_TYPE) || hasDragType(event, CARD_DRAG_TYPE)) {
+          event.preventDefault();
+        }
+        if (hasDragType(event, LIST_DRAG_TYPE)) {
+          event.stopPropagation();
+          onDragListOver(list.id);
+        }
+      }}
+      onDrop={(event) => {
+        event.stopPropagation();
+        if (hasDragType(event, LIST_DRAG_TYPE)) {
+          onDropListBefore(list.id);
+          return;
+        }
+        onDropCard(list.id);
+      }}
     >
       <div className="border-b border-slate-200 bg-white px-3 py-3">
         <div className="flex items-start justify-between gap-2">
+          <button
+            type="button"
+            draggable
+            onDragStart={(event) => {
+              event.stopPropagation();
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData(LIST_DRAG_TYPE, String(list.id));
+              setListDragImage(event, listRef.current, list.name, list.cards?.length ?? 0);
+              onDragListStart(list.id);
+            }}
+            onDragEnd={onDragListEnd}
+            className="mt-0.5 grid h-8 w-7 shrink-0 cursor-grab place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 active:cursor-grabbing"
+            title="拖动列表排序"
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
           <div className="min-w-0 flex-1">
             {renaming ? (
               <form onSubmit={submitRename}>
@@ -473,6 +632,24 @@ function BoardList({
   );
 }
 
+function ListDropPlaceholder({
+  onDragOver,
+  onDrop
+}: {
+  onDragOver: (event: DragEvent<HTMLDivElement>) => void;
+  onDrop: (event: DragEvent<HTMLDivElement>) => void;
+}) {
+  return (
+    <div
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      className="flex h-[calc(100vh-185px)] max-h-[720px] w-80 shrink-0 items-center justify-center rounded-md border-2 border-dashed border-teal-500 bg-teal-50/80 text-sm font-medium text-teal-700 shadow-inner"
+    >
+      放到这里
+    </div>
+  );
+}
+
 function CardTile({
   card,
   dragging,
@@ -498,6 +675,7 @@ function CardTile({
       draggable
       onClick={onOpen}
       onDragStart={(event) => {
+        event.dataTransfer.setData(CARD_DRAG_TYPE, String(card.id));
         event.dataTransfer.effectAllowed = "move";
         onDragStart();
       }}
@@ -1381,8 +1559,60 @@ function moveCardLocally(board: Board, cardId: number, targetListId: number, bef
   return { ...board, lists: normalized };
 }
 
+function moveListLocally(board: Board, listId: number, beforeListId?: number): Board | null {
+  const lists = [...(board.lists ?? [])];
+  const fromIndex = lists.findIndex((list) => list.id === listId);
+  if (fromIndex < 0 || listId === beforeListId) {
+    return null;
+  }
+
+  const [moved] = lists.splice(fromIndex, 1);
+  const beforeIndex = beforeListId ? lists.findIndex((list) => list.id === beforeListId) : -1;
+  const insertIndex = beforeIndex >= 0 ? beforeIndex : lists.length;
+  lists.splice(insertIndex, 0, moved);
+
+  return {
+    ...board,
+    lists: lists.map((list, position) => ({ ...list, position }))
+  };
+}
+
 function allCards(board: Board): Card[] {
   return (board.lists ?? []).flatMap((list) => list.cards ?? []);
+}
+
+function hasDragType(event: DragEvent, type: string) {
+  return Array.from(event.dataTransfer.types).includes(type);
+}
+
+function setListDragImage(event: DragEvent, source: HTMLElement | null, listName: string, cardCount: number) {
+  if (!source || typeof document === "undefined") {
+    return;
+  }
+
+  const rect = source.getBoundingClientRect();
+  const preview = document.createElement("div");
+  preview.className =
+    "pointer-events-none fixed left-0 top-0 z-[9999] w-80 rounded-md border border-teal-300 bg-white px-4 py-3 text-slate-900 shadow-2xl";
+  preview.style.width = `${Math.min(rect.width, 320)}px`;
+  preview.style.transform = "translate(-9999px, -9999px)";
+  preview.innerHTML = `<div style="font-size:14px;font-weight:700;line-height:20px;">${escapeHtml(listName)}</div><div style="margin-top:4px;font-size:12px;color:#64748b;">正在移动，${cardCount} 张卡片</div>`;
+  document.body.appendChild(preview);
+  event.dataTransfer.setDragImage(preview, Math.min(rect.width / 2, 160), 24);
+  window.setTimeout(() => preview.remove(), 0);
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => {
+    const entities: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    };
+    return entities[char] ?? char;
+  });
 }
 
 function formatShortDate(value: string) {
