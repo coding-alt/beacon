@@ -696,6 +696,7 @@ function CardModal({
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
   const [memberSearch, setMemberSearch] = useState("");
   const skipTitleSaveRef = useRef(false);
   const progressOptions = useMemo(() => board.lists?.map((item) => item.name) ?? [], [board.lists]);
@@ -739,6 +740,24 @@ function CardModal({
     list?.name
   ]);
 
+  useEffect(() => {
+    setSaveMessage("");
+  }, [card.id]);
+
+  useEffect(() => {
+    if (!saveMessage) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setSaveMessage(""), 3000);
+    return () => window.clearTimeout(timer);
+  }, [saveMessage]);
+
+  function markEditing() {
+    setSaveError("");
+    setSaveMessage("");
+  }
+
   async function request(path: string, body: unknown, method: "POST" | "PATCH" | "DELETE" = "PATCH") {
     const updated = await apiRequest<Board>(path, token, {
       method,
@@ -757,6 +776,7 @@ function CardModal({
 
     setSaving(true);
     setSaveError("");
+    setSaveMessage("");
     try {
       await request(`/cards/${card.id}`, {
         title: nextTitle,
@@ -770,8 +790,10 @@ function CardModal({
         latestProgressRecord
       });
       setTitle(nextTitle);
+      setSaveMessage("已保存");
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "无法保存卡片");
+      setSaveMessage("");
     } finally {
       setSaving(false);
     }
@@ -781,28 +803,34 @@ function CardModal({
     if (skipTitleSaveRef.current) {
       skipTitleSaveRef.current = false;
       setSaveError("");
+      setSaveMessage("");
       return;
     }
 
     const nextTitle = title.trim();
     if (!nextTitle) {
       setSaveError("卡片标题不能为空");
+      setSaveMessage("");
       setTitle(card.title);
       return;
     }
     if (nextTitle === card.title) {
       setTitle(nextTitle);
       setSaveError("");
+      setSaveMessage("");
       return;
     }
 
     setSaving(true);
     setSaveError("");
+    setSaveMessage("");
     try {
       await request(`/cards/${card.id}`, { title: nextTitle });
       setTitle(nextTitle);
+      setSaveMessage("标题已保存");
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "无法保存卡片标题");
+      setSaveMessage("");
       setTitle(card.title);
     } finally {
       setSaving(false);
@@ -829,7 +857,10 @@ function CardModal({
             </div>
             <input
               value={title}
-              onChange={(event) => setTitle(event.target.value)}
+              onChange={(event) => {
+                markEditing();
+                setTitle(event.target.value);
+              }}
               onBlur={() => void saveTitle()}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
@@ -839,6 +870,7 @@ function CardModal({
                 if (event.key === "Escape") {
                   event.preventDefault();
                   skipTitleSaveRef.current = true;
+                  setSaveMessage("");
                   setTitle(card.title);
                   event.currentTarget.blur();
                 }
@@ -859,63 +891,82 @@ function CardModal({
 
         {card.coverColor ? <div className="h-16" style={{ backgroundColor: card.coverColor }} /> : null}
 
-        <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0 space-y-6">
             <section>
               <h3 className="mb-3 text-sm font-semibold text-slate-900">任务配置</h3>
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block md:col-span-2">
+              <div className="space-y-4">
+                <label className="block">
                   <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
                     <FileText className="h-4 w-4 text-teal-700" />
                     任务描述
                   </span>
-                  <input
+                  <textarea
                     value={description}
-                    onChange={(event) => setDescription(event.target.value)}
+                    onChange={(event) => {
+                      markEditing();
+                      setDescription(event.target.value);
+                    }}
                     placeholder="补充背景、目标、验收标准"
-                    className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+                    rows={4}
+                    className="mt-1 min-h-28 w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-sm leading-6 outline-none focus:border-teal-700"
                   />
                 </label>
 
-                <label className="block">
-                  <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                    <CalendarClock className="h-4 w-4 text-teal-700" />
-                    预计完成时间
-                  </span>
-                  <input
-                    type="date"
-                    value={dueDate}
-                    onChange={(event) => setDueDate(event.target.value)}
-                    className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+                <div className="grid gap-3 md:grid-cols-3">
+                  <label className="block">
+                    <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                      <CalendarClock className="h-4 w-4 text-teal-700" />
+                      预计完成时间
+                    </span>
+                    <input
+                      type="date"
+                      value={dueDate}
+                      onChange={(event) => {
+                        markEditing();
+                        setDueDate(event.target.value);
+                      }}
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+                    />
+                  </label>
+
+                  <PrioritySelect
+                    value={priority}
+                    onChange={(value) => {
+                      markEditing();
+                      setPriority(value);
+                    }}
                   />
-                </label>
 
-                <PrioritySelect value={priority} onChange={setPriority} />
-
-                <div>
-                  <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                    <Clock className="h-4 w-4 text-teal-700" />
-                    是否延期
-                  </span>
-                  <div
-                    className={`mt-1 inline-flex h-10 w-full items-center rounded-md border px-3 text-sm ${
-                      card.delayed ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"
-                    }`}
-                  >
-                    {card.delayed ? "已延期" : "未延期"}
+                  <div>
+                    <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                      <Clock className="h-4 w-4 text-teal-700" />
+                      是否延期
+                    </span>
+                    <div
+                      className={`mt-1 inline-flex h-10 w-full items-center rounded-md border px-3 text-sm ${
+                        card.delayed ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      }`}
+                    >
+                      {card.delayed ? "已延期" : "未延期"}
+                    </div>
                   </div>
                 </div>
 
-                <label className="block md:col-span-2">
+                <label className="block">
                   <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
                     <Target className="h-4 w-4 text-teal-700" />
                     任务情况总结
                   </span>
-                  <input
+                  <textarea
                     value={summary}
-                    onChange={(event) => setSummary(event.target.value)}
+                    onChange={(event) => {
+                      markEditing();
+                      setSummary(event.target.value);
+                    }}
                     placeholder="简要记录当前结论、风险或下一步"
-                    className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+                    rows={3}
+                    className="mt-1 min-h-24 w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-sm leading-6 outline-none focus:border-teal-700"
                   />
                 </label>
               </div>
@@ -933,100 +984,98 @@ function CardModal({
                   <ChevronRight className={`h-4 w-4 text-slate-500 transition ${hiddenOpen ? "rotate-90" : ""}`} />
                 </button>
                 {hiddenOpen ? (
-                  <div className="grid gap-4 border-t border-slate-200 p-3 md:grid-cols-2">
-                    <label className="block">
-                      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                        <CalendarClock className="h-4 w-4 text-slate-500" />
-                        开始日期
-                      </span>
-                      <input
-                        type="date"
-                        value={startDate}
-                        onChange={(event) => setStartDate(event.target.value)}
-                        className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                        <CalendarCheck className="h-4 w-4 text-slate-500" />
-                        实际完成日期
-                      </span>
-                      <input
-                        type="date"
-                        value={completedAt}
-                        onChange={(event) => setCompletedAt(event.target.value)}
-                        className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                        <ListChecks className="h-4 w-4 text-slate-500" />
-                        进展
-                      </span>
-                      <select
-                        value={progress}
-                        onChange={(event) => setProgress(event.target.value)}
-                        className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-teal-700"
-                      >
-                        {progressOptions.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                  <div className="space-y-4 border-t border-slate-200 p-3">
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <label className="block">
+                        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                          <CalendarClock className="h-4 w-4 text-slate-500" />
+                          开始时间
+                        </span>
+                        <input
+                          type="date"
+                          value={startDate}
+                          onChange={(event) => {
+                            markEditing();
+                            setStartDate(event.target.value);
+                          }}
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                          <CalendarCheck className="h-4 w-4 text-slate-500" />
+                          实际完成日期
+                        </span>
+                        <input
+                          type="date"
+                          value={completedAt}
+                          onChange={(event) => {
+                            markEditing();
+                            setCompletedAt(event.target.value);
+                          }}
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                          <ListChecks className="h-4 w-4 text-slate-500" />
+                          进展
+                        </span>
+                        <select
+                          value={progress}
+                          onChange={(event) => {
+                            markEditing();
+                            setProgress(event.target.value);
+                          }}
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-teal-700"
+                        >
+                          {progressOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
                     <label className="block">
                       <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
                         <MessageSquare className="h-4 w-4 text-slate-500" />
                         最新进展记录
                       </span>
-                      <input
+                      <textarea
                         value={latestProgressRecord}
-                        onChange={(event) => setLatestProgressRecord(event.target.value)}
-                        className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+                        onChange={(event) => {
+                          markEditing();
+                          setLatestProgressRecord(event.target.value);
+                        }}
+                        rows={3}
+                        className="mt-1 min-h-24 w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-sm leading-6 outline-none focus:border-teal-700"
                       />
                     </label>
                   </div>
                 ) : null}
               </section>
 
-              <button
-                type="button"
-                onClick={() => void saveDetails()}
-                disabled={saving}
-                className="mt-3 inline-flex h-10 items-center gap-2 rounded-md bg-teal-700 px-4 text-sm font-semibold text-white disabled:opacity-60"
-              >
-                {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
-                保存
-              </button>
-            </section>
-
-            <section>
-              <h3 className="mb-3 text-sm font-semibold text-slate-900">评论</h3>
-              <form onSubmit={addComment} className="flex gap-2">
-                <input
-                  value={comment}
-                  onChange={(event) => setComment(event.target.value)}
-                  placeholder="写一条评论"
-                  className="h-10 min-w-0 flex-1 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
-                />
-                <button type="submit" className="rounded-md bg-slate-900 px-3 text-sm font-medium text-white">
-                  发送
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void saveDetails()}
+                  disabled={saving}
+                  className="inline-flex h-10 items-center gap-2 rounded-md bg-teal-700 px-4 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+                  保存
                 </button>
-              </form>
-              <div className="mt-4 space-y-3">
-                {(card.comments ?? []).map((item) => (
-                  <div key={item.id} className="flex gap-3">
-                    <Avatar user={item.user} size="sm" />
-                    <div className="min-w-0 flex-1 rounded-md bg-slate-50 px-3 py-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold text-slate-900">{item.user.name}</span>
-                        <span className="text-xs text-slate-500">{formatShortDate(item.createdAt)}</span>
-                      </div>
-                      <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{item.body}</p>
-                    </div>
-                  </div>
-                ))}
+                {saveMessage ? (
+                  <span
+                    role="status"
+                    aria-live="polite"
+                    className="inline-flex h-10 items-center gap-1.5 rounded-md bg-emerald-50 px-3 text-sm font-medium text-emerald-700"
+                  >
+                    <CircleCheck className="h-4 w-4" />
+                    {saveMessage}
+                  </span>
+                ) : null}
               </div>
             </section>
           </div>
@@ -1090,6 +1139,42 @@ function CardModal({
                   ))}
                   {(card.members ?? []).length === 0 ? <p className="text-sm text-slate-500">未指定执行人</p> : null}
                 </div>
+              </div>
+            </section>
+
+            <section>
+              <h3 className="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+                <MessageSquare className="h-4 w-4 text-teal-700" />
+                评论
+              </h3>
+              <form onSubmit={addComment} className="space-y-2">
+                <textarea
+                  value={comment}
+                  onChange={(event) => setComment(event.target.value)}
+                  placeholder="写一条评论"
+                  rows={3}
+                  className="min-h-24 w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-sm leading-6 outline-none focus:border-teal-700"
+                />
+                <button type="submit" className="h-9 rounded-md bg-slate-900 px-3 text-sm font-medium text-white">
+                  发送
+                </button>
+              </form>
+              <div className="beacon-scrollbar mt-4 max-h-80 space-y-3 overflow-y-auto pr-1">
+                {(card.comments ?? []).map((item) => (
+                  <div key={item.id} className="flex gap-3">
+                    <Avatar user={item.user} size="sm" />
+                    <div className="min-w-0 flex-1 rounded-md bg-slate-50 px-3 py-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-900">{item.user.name}</span>
+                        <span className="text-xs text-slate-500">{formatShortDate(item.createdAt)}</span>
+                      </div>
+                      <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{item.body}</p>
+                    </div>
+                  </div>
+                ))}
+                {(card.comments ?? []).length === 0 ? (
+                  <p className="rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-500">暂无评论</p>
+                ) : null}
               </div>
             </section>
 
