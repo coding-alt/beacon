@@ -52,6 +52,7 @@ func (s *Server) Routes() http.Handler {
 			r.Use(s.auth)
 
 			r.Get("/me", s.me)
+			r.Patch("/me/password", s.changePassword)
 
 			r.Get("/workspaces", s.listWorkspaces)
 			r.Post("/workspaces", s.createWorkspace)
@@ -251,6 +252,46 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, user)
+}
+
+func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CurrentPassword string `json:"currentPassword"`
+		NewPassword     string `json:"newPassword"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if len(req.NewPassword) < 8 {
+		errorJSON(w, http.StatusBadRequest, "new password must be at least 8 characters")
+		return
+	}
+	if req.CurrentPassword == req.NewPassword {
+		errorJSON(w, http.StatusBadRequest, "new password must be different from current password")
+		return
+	}
+
+	var user models.User
+	if err := s.db.First(&user, currentUserID(r)).Error; err != nil {
+		errorJSON(w, http.StatusUnauthorized, "user not found")
+		return
+	}
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.CurrentPassword)) != nil {
+		errorJSON(w, http.StatusUnauthorized, "current password is incorrect")
+		return
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		errorJSON(w, http.StatusInternalServerError, "could not secure password")
+		return
+	}
+	if err := s.db.Model(&user).Update("password_hash", string(hash)).Error; err != nil {
+		errorJSON(w, http.StatusInternalServerError, "could not update password")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) issueToken(userID uint) (string, error) {

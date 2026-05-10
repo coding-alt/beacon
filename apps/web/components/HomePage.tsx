@@ -6,6 +6,7 @@ import {
   Check,
   KanbanSquare,
   LoaderCircle,
+  LockKeyhole,
   LogOut,
   Pencil,
   Plus,
@@ -27,6 +28,7 @@ export function HomePage() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [passwordOpen, setPasswordOpen] = useState(false);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(TOKEN_KEY);
@@ -139,6 +141,15 @@ export function HomePage() {
             </div>
             <button
               type="button"
+              onClick={() => setPasswordOpen(true)}
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              title="修改密码"
+            >
+              <LockKeyhole className="h-4 w-4" />
+              修改密码
+            </button>
+            <button
+              type="button"
               onClick={logout}
               className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
               title="退出登录"
@@ -197,7 +208,128 @@ export function HomePage() {
           )}
         </section>
       </section>
+
+      {passwordOpen ? <ChangePasswordModal token={token} onClose={() => setPasswordOpen(false)} /> : null}
     </main>
+  );
+}
+
+function ChangePasswordModal({ token, onClose }: { token: string; onClose: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+
+    if (newPassword.length < 8) {
+      setError("新密码至少需要 8 个字符");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("两次输入的新密码不一致");
+      return;
+    }
+    if (currentPassword === newPassword) {
+      setError("新密码不能与当前密码相同");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await apiRequest<{ status: string }>("/me/password", token, {
+        method: "PATCH",
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setMessage("密码已修改");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "无法修改密码");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/55 px-4 py-10">
+      <form onSubmit={submit} className="w-full max-w-md rounded-md bg-white shadow-panel">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">修改密码</h2>
+            <p className="mt-1 text-sm text-slate-500">修改后请使用新密码登录。</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-slate-500 hover:bg-slate-100"
+            title="关闭"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-5 py-5">
+          <label className="block">
+            <span className="text-sm font-medium text-slate-700">当前密码</span>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/15"
+              autoComplete="current-password"
+            />
+          </label>
+          <label className="block">
+            <span className="text-sm font-medium text-slate-700">新密码</span>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/15"
+              autoComplete="new-password"
+            />
+          </label>
+          <label className="block">
+            <span className="text-sm font-medium text-slate-700">确认新密码</span>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/15"
+              autoComplete="new-password"
+            />
+          </label>
+
+          {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+          {message ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-10 rounded-md border border-slate-300 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            取消
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="inline-flex h-10 items-center gap-2 rounded-md bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+            保存
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
