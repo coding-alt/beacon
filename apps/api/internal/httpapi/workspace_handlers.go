@@ -214,3 +214,60 @@ func (s *Server) inviteWorkspaceMember(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusCreated, member)
 }
+
+func (s *Server) deleteWorkspaceMember(w http.ResponseWriter, r *http.Request) {
+	workspaceID, err := paramUint(r, "workspaceID")
+	if err != nil {
+		errorJSON(w, http.StatusBadRequest, "invalid workspace id")
+		return
+	}
+	memberID, err := paramUint(r, "memberID")
+	if err != nil {
+		errorJSON(w, http.StatusBadRequest, "invalid member id")
+		return
+	}
+
+	currentMember, ok := s.requireWorkspaceAdmin(w, r, workspaceID)
+	if !ok {
+		return
+	}
+
+	var target models.WorkspaceMember
+	if err := s.db.First(&target, "workspace_id = ? AND user_id = ?", workspaceID, memberID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			errorJSON(w, http.StatusNotFound, "workspace member not found")
+			return
+		}
+		errorJSON(w, http.StatusInternalServerError, "could not load workspace member")
+		return
+	}
+
+	if target.Role == "owner" {
+		errorJSON(w, http.StatusForbidden, "workspace owner cannot be removed")
+		return
+	}
+	if target.UserID == currentMember.UserID {
+		errorJSON(w, http.StatusForbidden, "cannot remove yourself from workspace")
+		return
+	}
+
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		cardSubquery := tx.
+			Model(&models.Card{}).
+			Select("cards.id").
+			Joins("JOIN boards ON boards.id = cards.board_id").
+			Where("boards.workspace_id = ?", workspaceID)
+
+		if err := tx.Exec("DELETE FROM card_members WHERE user_id = ? AND card_id IN (?)", memberID, cardSubquery).Error; err != nil {
+			return err
+		}
+
+		return tx.Where("workspace_id = ? AND user_id = ?", workspaceID, memberID).Delete(&models.WorkspaceMember{}).Error
+	})
+	if err != nil {
+		errorJSON(w, http.StatusInternalServerError, "could not remove member")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]bool{"deleted": true})
+}

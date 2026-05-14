@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   CalendarCheck,
   CalendarClock,
+  Check,
   ChevronRight,
   CircleCheck,
   CircleAlert,
@@ -17,6 +18,7 @@ import {
   LoaderCircle,
   MessageSquare,
   MoreHorizontal,
+  Pencil,
   Plus,
   Search,
   Star,
@@ -40,6 +42,7 @@ const TOKEN_KEY = "beacon_token";
 const LIST_DRAG_TYPE = "application/x-beacon-list";
 const CARD_DRAG_TYPE = "application/x-beacon-card";
 type ListDropTarget = number | "end" | null;
+type CardDropTarget = { listId: number; beforeCardId?: number } | null;
 const PRIORITY_OPTIONS = [
   { value: "", label: "未设置", className: "border-slate-200 bg-slate-50 text-slate-500" },
   { value: "P0", label: "P0", className: "border-red-200 bg-red-50 text-red-700" },
@@ -64,8 +67,13 @@ export function BoardView({ boardId }: { boardId: number }) {
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [selectedCardId, setSelectedCardId] = useState<number | null>(null);
   const [draggingCardId, setDraggingCardId] = useState<number | null>(null);
+  const [cardDropTarget, setCardDropTarget] = useState<CardDropTarget>(null);
   const [draggingListId, setDraggingListId] = useState<number | null>(null);
   const [listDropTargetId, setListDropTargetId] = useState<ListDropTarget>(null);
+  const [editingBoardName, setEditingBoardName] = useState(false);
+  const [boardName, setBoardName] = useState("");
+  const [boardNameSaving, setBoardNameSaving] = useState(false);
+  const [memberListOpen, setMemberListOpen] = useState(false);
   const dragCardRef = useRef<{ cardId: number } | null>(null);
   const dragListRef = useRef<{ listId: number } | null>(null);
 
@@ -116,6 +124,11 @@ export function BoardView({ boardId }: { boardId: number }) {
 
     return () => source.close();
   }, [boardId, loadBoard, token]);
+
+  useEffect(() => {
+    setBoardName(board?.name ?? "");
+    setEditingBoardName(false);
+  }, [board?.id, board?.name]);
 
   const selectedCard = useMemo(() => {
     if (!board || selectedCardId == null) {
@@ -223,9 +236,31 @@ export function BoardView({ boardId }: { boardId: number }) {
     }
   }
 
+  async function saveBoardName() {
+    const nextName = boardName.trim();
+    if (!nextName || !board || nextName === board.name) {
+      setBoardName(board?.name ?? "");
+      setEditingBoardName(false);
+      return;
+    }
+
+    setBoardNameSaving(true);
+    try {
+      await mutate(`/boards/${board.id}`, { name: nextName });
+      setEditingBoardName(false);
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "无法修改看板名称");
+      setBoardName(board.name);
+    } finally {
+      setBoardNameSaving(false);
+    }
+  }
+
   function clearCardDrag() {
     dragCardRef.current = null;
     setDraggingCardId(null);
+    setCardDropTarget(null);
   }
 
   function clearListDrag() {
@@ -298,7 +333,50 @@ export function BoardView({ boardId }: { boardId: number }) {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <KanbanSquare className="h-5 w-5 shrink-0" />
-                <h1 className="truncate text-xl font-semibold">{board.name}</h1>
+                {editingBoardName ? (
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <input
+                      value={boardName}
+                      onChange={(event) => setBoardName(event.target.value)}
+                      onBlur={() => void saveBoardName()}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void saveBoardName();
+                        }
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          setBoardName(board.name);
+                          setEditingBoardName(false);
+                        }
+                      }}
+                      autoFocus
+                      className="h-10 min-w-0 flex-1 rounded-md border border-white/30 bg-white/15 px-3 text-xl font-semibold text-white outline-none placeholder:text-white/50 focus:border-white/50"
+                    />
+                    <button
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => void saveBoardName()}
+                      disabled={boardNameSaving}
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-white/15 hover:bg-white/25 disabled:opacity-60"
+                      title="保存看板名称"
+                    >
+                      {boardNameSaving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <h1 className="truncate text-xl font-semibold">{board.name}</h1>
+                    <button
+                      type="button"
+                      onClick={() => setEditingBoardName(true)}
+                      className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-white/10 hover:bg-white/20"
+                      title="修改看板名称"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                  </>
+                )}
                 {board.starred ? <Star className="h-5 w-5 fill-amber-300 text-amber-300" /> : null}
               </div>
               <p className="truncate text-sm text-white/80">{board.description || "团队项目看板"}</p>
@@ -344,7 +422,7 @@ export function BoardView({ boardId }: { boardId: number }) {
             </select>
             <ChevronRight className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 rotate-90 -translate-y-1/2 text-slate-400" />
           </label>
-          <MemberStrip members={board.members ?? []} />
+          <MemberStrip members={board.members ?? []} onOpen={() => setMemberListOpen(true)} />
         </div>
       </header>
 
@@ -385,6 +463,7 @@ export function BoardView({ boardId }: { boardId: number }) {
             <BoardList
               list={list}
               draggingCardId={draggingCardId}
+              cardDropTarget={cardDropTarget}
               draggingListId={draggingListId}
               isListDropTarget={listDropTargetId === list.id && draggingListId !== list.id}
               onCreateCard={createCard}
@@ -415,6 +494,10 @@ export function BoardView({ boardId }: { boardId: number }) {
               onDragCardStart={(cardId) => {
                 dragCardRef.current = { cardId };
                 setDraggingCardId(cardId);
+                setCardDropTarget(null);
+              }}
+              onDragCardOver={(targetListId, beforeCardId) => {
+                setCardDropTarget({ listId: targetListId, beforeCardId });
               }}
               onDragCardEnd={clearCardDrag}
             />
@@ -439,6 +522,15 @@ export function BoardView({ boardId }: { boardId: number }) {
         />
       ) : null}
 
+      {memberListOpen ? (
+        <MemberListModal
+          token={token}
+          board={board}
+          onClose={() => setMemberListOpen(false)}
+          onUpdated={(next) => setBoard(next)}
+        />
+      ) : null}
+
     </main>
   );
 }
@@ -446,6 +538,7 @@ export function BoardView({ boardId }: { boardId: number }) {
 function BoardList({
   list,
   draggingCardId,
+  cardDropTarget,
   draggingListId,
   isListDropTarget,
   onCreateCard,
@@ -458,10 +551,12 @@ function BoardList({
   onDragListEnd,
   onDropCard,
   onDragCardStart,
+  onDragCardOver,
   onDragCardEnd
 }: {
   list: List;
   draggingCardId: number | null;
+  cardDropTarget: CardDropTarget;
   draggingListId: number | null;
   isListDropTarget: boolean;
   onCreateCard: (listId: number, title: string) => Promise<void>;
@@ -474,6 +569,7 @@ function BoardList({
   onDragListEnd: () => void;
   onDropCard: (targetListId: number, beforeCardId?: number) => void;
   onDragCardStart: (cardId: number) => void;
+  onDragCardOver: (targetListId: number, beforeCardId?: number) => void;
   onDragCardEnd: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -524,6 +620,11 @@ function BoardList({
         if (hasDragType(event, LIST_DRAG_TYPE)) {
           event.stopPropagation();
           onDragListOver(list.id);
+          return;
+        }
+        if (hasDragType(event, CARD_DRAG_TYPE)) {
+          event.stopPropagation();
+          onDragCardOver(list.id);
         }
       }}
       onDrop={(event) => {
@@ -609,16 +710,22 @@ function BoardList({
       </div>
 
       <div className="beacon-scrollbar min-h-20 space-y-2 overflow-y-auto px-2 py-3">
+        {cardDropTarget?.listId === list.id && cardDropTarget.beforeCardId == null ? (
+          <CardDropPlaceholder />
+        ) : null}
         {(list.cards ?? []).map((card) => (
-          <CardTile
-            key={card.id}
-            card={card}
-            dragging={draggingCardId === card.id}
-            onOpen={() => onOpenCard(card.id)}
-            onDropBefore={() => onDropCard(list.id, card.id)}
-            onDragStart={() => onDragCardStart(card.id)}
-            onDragEnd={onDragCardEnd}
-          />
+          <Fragment key={card.id}>
+            {cardDropTarget?.listId === list.id && cardDropTarget.beforeCardId === card.id ? <CardDropPlaceholder /> : null}
+            <CardTile
+              card={card}
+              dragging={draggingCardId === card.id}
+              onOpen={() => onOpenCard(card.id)}
+              onDropBefore={() => onDropCard(list.id, card.id)}
+              onDragStart={() => onDragCardStart(card.id)}
+              onDragOver={() => onDragCardOver(list.id, card.id)}
+              onDragEnd={onDragCardEnd}
+            />
+          </Fragment>
         ))}
         {(list.cards ?? []).length === 0 ? (
           <div className="rounded-md border border-dashed border-slate-300 bg-white/70 px-3 py-8 text-center text-sm text-slate-400">
@@ -650,12 +757,17 @@ function ListDropPlaceholder({
   );
 }
 
+function CardDropPlaceholder() {
+  return <div className="h-20 rounded-md border-2 border-dashed border-teal-400 bg-teal-50/70" />;
+}
+
 function CardTile({
   card,
   dragging,
   onOpen,
   onDropBefore,
   onDragStart,
+  onDragOver,
   onDragEnd
 }: {
   card: Card;
@@ -663,6 +775,7 @@ function CardTile({
   onOpen: () => void;
   onDropBefore: () => void;
   onDragStart: () => void;
+  onDragOver: () => void;
   onDragEnd: () => void;
 }) {
   const statusClass = card.delayed
@@ -680,7 +793,11 @@ function CardTile({
         onDragStart();
       }}
       onDragEnd={onDragEnd}
-      onDragOver={(event) => event.preventDefault()}
+      onDragOver={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onDragOver();
+      }}
       onDrop={(event) => {
         event.stopPropagation();
         onDropBefore();
@@ -698,7 +815,9 @@ function CardTile({
           {card.priority ? <PriorityPill value={card.priority} /> : null}
         </div>
 
-        {card.summary ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">{card.summary}</p> : null}
+        {card.summary ? (
+          <p className="mt-2 whitespace-pre-wrap break-words text-xs italic leading-5 text-red-600">{card.summary}</p>
+        ) : null}
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {card.dueDate ? (
@@ -1028,7 +1147,7 @@ function CardModal({
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/55 px-4 py-8">
       <section className="w-full max-w-4xl rounded-md bg-white shadow-panel">
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="mb-1 flex items-center gap-2 text-sm text-slate-500">
               <GripVertical className="h-4 w-4" />
               {list?.name ?? "列表"}
@@ -1053,7 +1172,7 @@ function CardModal({
                   event.currentTarget.blur();
                 }
               }}
-              className="w-full rounded-md border border-transparent px-2 py-1 text-2xl font-semibold text-slate-950 outline-none focus:border-slate-300"
+              className="block w-full rounded-md border border-transparent px-2 py-1 text-2xl font-semibold text-slate-950 outline-none focus:border-slate-300"
             />
             {saveError ? <p className="mt-1 px-2 text-sm text-red-700">{saveError}</p> : null}
           </div>
@@ -1132,9 +1251,9 @@ function CardModal({
                 </div>
 
                 <label className="block">
-                  <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                    <Target className="h-4 w-4 text-teal-700" />
-                    任务情况总结
+                  <span className="inline-flex items-center gap-1.5 text-sm font-medium text-red-700">
+                    <Target className="h-4 w-4 text-red-600" />
+                    风险与延期说明
                   </span>
                   <textarea
                     value={summary}
@@ -1142,9 +1261,9 @@ function CardModal({
                       markEditing();
                       setSummary(event.target.value);
                     }}
-                    placeholder="简要记录当前结论、风险或下一步"
+                    placeholder="描述当前风险或延期原因"
                     rows={3}
-                    className="mt-1 min-h-24 w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-sm leading-6 outline-none focus:border-teal-700"
+                    className="mt-1 min-h-24 w-full resize-y rounded-md border border-red-200 px-3 py-2 text-sm leading-6 text-red-700 outline-none placeholder:text-red-300 focus:border-red-500"
                   />
                 </label>
               </div>
@@ -1488,9 +1607,14 @@ function InviteMember({
   );
 }
 
-function MemberStrip({ members }: { members: WorkspaceMember[] }) {
+function MemberStrip({ members, onOpen }: { members: WorkspaceMember[]; onOpen: () => void }) {
   return (
-    <div className="flex items-center gap-2 rounded-md bg-white/15 px-3 py-2 text-white">
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex items-center gap-2 rounded-md bg-white/15 px-3 py-2 text-white hover:bg-white/25"
+      title="查看成员列表"
+    >
       <Users className="h-4 w-4" />
       <div className="flex -space-x-1">
         {members.slice(0, 5).map((member) => (
@@ -1498,6 +1622,96 @@ function MemberStrip({ members }: { members: WorkspaceMember[] }) {
         ))}
       </div>
       <span className="text-sm">{members.length}</span>
+    </button>
+  );
+}
+
+function MemberListModal({
+  token,
+  board,
+  onClose,
+  onUpdated
+}: {
+  token: string;
+  board: Board;
+  onClose: () => void;
+  onUpdated: (board: Board) => void;
+}) {
+  const [submittingUserId, setSubmittingUserId] = useState<number | null>(null);
+  const members = board.members ?? [];
+
+  async function removeMember(member: WorkspaceMember) {
+    if (member.role === "owner") {
+      return;
+    }
+    const confirmed = window.confirm(`确定将成员「${member.user.name}」移出工作区吗？`);
+    if (!confirmed) {
+      return;
+    }
+
+    setSubmittingUserId(member.userId);
+    try {
+      await apiRequest<{ deleted: boolean }>(`/workspaces/${board.workspaceId}/members/${member.userId}`, token, {
+        method: "DELETE"
+      });
+      const updated = await apiRequest<Board>(`/boards/${board.id}`, token);
+      onUpdated(updated);
+    } finally {
+      setSubmittingUserId(null);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 py-8">
+      <section className="w-full max-w-2xl rounded-md bg-white shadow-panel">
+        <div className="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">工作区成员</h2>
+            <p className="mt-1 text-sm text-slate-500">共 {members.length} 位成员</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid h-10 w-10 place-items-center rounded-md text-slate-600 hover:bg-slate-100"
+            title="关闭"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="beacon-scrollbar max-h-[70vh] space-y-2 overflow-y-auto p-5">
+          {members.map((member) => (
+            <div
+              key={member.userId}
+              className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-3"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <Avatar user={member.user} size="md" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-900">{member.user.name}</p>
+                  <p className="truncate text-xs text-slate-500">{member.user.email}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-md bg-white px-2 py-1 text-xs font-medium text-slate-600 shadow-sm">
+                  {member.role === "owner" ? "所有者" : member.role === "admin" ? "管理员" : "成员"}
+                </span>
+                {member.role !== "owner" ? (
+                  <button
+                    type="button"
+                    onClick={() => void removeMember(member)}
+                    disabled={submittingUserId === member.userId}
+                    className="inline-flex h-9 items-center gap-1 rounded-md border border-red-200 px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+                  >
+                    {submittingUserId === member.userId ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    移除
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ))}
+          {members.length === 0 ? <p className="text-sm text-slate-500">暂无成员</p> : null}
+        </div>
+      </section>
     </div>
   );
 }

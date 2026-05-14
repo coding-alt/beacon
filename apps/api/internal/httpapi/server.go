@@ -60,6 +60,7 @@ func (s *Server) Routes() http.Handler {
 			r.Delete("/workspaces/{workspaceID}", s.deleteWorkspace)
 			r.Get("/workspaces/{workspaceID}/members", s.listWorkspaceMembers)
 			r.Post("/workspaces/{workspaceID}/members", s.inviteWorkspaceMember)
+			r.Delete("/workspaces/{workspaceID}/members/{memberID}", s.deleteWorkspaceMember)
 			r.Get("/workspaces/{workspaceID}/boards", s.listBoards)
 			r.Post("/workspaces/{workspaceID}/boards", s.createBoard)
 

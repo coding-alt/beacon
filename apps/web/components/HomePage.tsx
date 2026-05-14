@@ -375,7 +375,7 @@ function AuthScreen({
           </div>
           <h1 className="text-4xl font-semibold tracking-normal md:text-6xl">Beacon</h1>
           <p className="mt-4 max-w-xl text-base leading-7 text-slate-100 md:text-lg">
-            像 Trello 一样拖拽任务状态，同时围绕团队目标、成员协作和部署迁移做了更适合自托管的基础设计。
+            聚焦目标，推动项目向前
           </p>
         </div>
       </section>

@@ -41,6 +41,29 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 http://127.0.0.1:3000
 ```
 
+## 生产构建与启动
+
+构建并启动 API：
+
+```bash
+cd /home/vip/yanyugang/beacon/apps/api
+/usr/local/go/bin/go build -o server ./cmd/server
+./server
+```
+
+说明：
+
+- `go build -o beacon-server ./cmd/server` 只会在当前目录生成或覆盖 `beacon-server` 文件。
+- 如果线上运行的不是这个文件，而是其他目录下的可执行文件，或由 `systemd` / `supervisor` / `pm2` 等托管，则还需要把新文件复制到实际部署位置，并重启对应服务。
+
+构建并启动 Web：
+
+```bash
+cd /home/vip/yanyugang/beacon/apps/web
+npm run build
+npm run start
+```
+
 ## 环境变量
 
 API 默认监听 `8080` 端口，默认使用本地 SQLite：

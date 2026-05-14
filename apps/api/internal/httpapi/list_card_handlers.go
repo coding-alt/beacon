@@ -337,6 +337,19 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 		progress := strings.TrimSpace(*req.Progress)
 		updates["progress"] = progress
 		updates["latest_progress_record"] = progressRecord(card.Progress, progress)
+		if progress != "" {
+			var list models.List
+			if err := s.db.First(&list, "board_id = ? AND name = ?", board.ID, progress).Error; err == nil {
+				updates["list_id"] = list.ID
+				now := time.Now()
+				if card.StartDate == nil && progress != "未开始" {
+					updates["start_date"] = &now
+				}
+				if card.CompletedAt == nil && progress == "已完成" {
+					updates["completed_at"] = &now
+				}
+			}
+		}
 	}
 	if req.LatestProgressRecord != nil {
 		updates["latest_progress_record"] = *req.LatestProgressRecord
