@@ -8,6 +8,8 @@ import {
   CalendarClock,
   Check,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   CircleCheck,
   CircleAlert,
   Clock,
@@ -26,6 +28,7 @@ import {
   Trash2,
   UserPlus,
   Users,
+  Crown,
   X
 } from "lucide-react";
 import {
@@ -65,6 +68,9 @@ export function BoardView({ boardId }: { boardId: number }) {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("all");
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [ownerFilter, setOwnerFilter] = useState("all");
+  const [cardsCollapsed, setCardsCollapsed] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState<number | null>(null);
   const [draggingCardId, setDraggingCardId] = useState<number | null>(null);
   const [cardDropTarget, setCardDropTarget] = useState<CardDropTarget>(null);
@@ -153,10 +159,16 @@ export function BoardView({ boardId }: { boardId: number }) {
           card.description.toLowerCase().includes(term) ||
           card.summary.toLowerCase().includes(term);
         const matchesPriority = priorityFilter === "all" || normalizedPriority === priorityFilter;
-        return matchesText && matchesPriority;
+        const matchesAssignee =
+          assigneeFilter === "all" ||
+          (card.members ?? []).some((member) => String(member.id) === assigneeFilter);
+        const matchesOwner =
+          ownerFilter === "all" ||
+          (ownerFilter === "none" ? !card.ownerId : String(card.ownerId) === ownerFilter);
+        return matchesText && matchesPriority && matchesAssignee && matchesOwner;
       })
     }));
-  }, [board, priorityFilter, search]);
+  }, [board, priorityFilter, search, assigneeFilter, ownerFilter]);
 
   async function mutate(path: string, body: unknown, method: "POST" | "PATCH" | "DELETE" = "PATCH") {
     if (!token || !board) {
@@ -422,6 +434,48 @@ export function BoardView({ boardId }: { boardId: number }) {
             </select>
             <ChevronRight className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 rotate-90 -translate-y-1/2 text-slate-400" />
           </label>
+          <label className="relative min-w-[150px]">
+            <Users className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <select
+              value={assigneeFilter}
+              onChange={(event) => setAssigneeFilter(event.target.value)}
+              className="h-10 w-full appearance-none rounded-md border border-white/20 bg-white pl-9 pr-8 text-sm font-medium text-slate-900 outline-none focus:ring-2 focus:ring-white/50"
+            >
+              <option value="all">全部执行人</option>
+              {(board.members ?? []).map((member) => (
+                <option key={member.userId} value={String(member.userId)}>
+                  {member.user.name}
+                </option>
+              ))}
+            </select>
+            <ChevronRight className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 rotate-90 -translate-y-1/2 text-slate-400" />
+          </label>
+          <label className="relative min-w-[150px]">
+            <Crown className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <select
+              value={ownerFilter}
+              onChange={(event) => setOwnerFilter(event.target.value)}
+              className="h-10 w-full appearance-none rounded-md border border-white/20 bg-white pl-9 pr-8 text-sm font-medium text-slate-900 outline-none focus:ring-2 focus:ring-white/50"
+            >
+              <option value="all">全部 Owner</option>
+              <option value="none">未设置 Owner</option>
+              {(board.members ?? []).map((member) => (
+                <option key={member.userId} value={String(member.userId)}>
+                  {member.user.name}
+                </option>
+              ))}
+            </select>
+            <ChevronRight className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 rotate-90 -translate-y-1/2 text-slate-400" />
+          </label>
+          <button
+            type="button"
+            onClick={() => setCardsCollapsed((value) => !value)}
+            className="inline-flex h-10 shrink-0 items-center gap-2 rounded-md border border-white/20 bg-white/15 px-3 text-sm font-medium text-white hover:bg-white/25"
+            title={cardsCollapsed ? "展开卡片" : "收缩卡片"}
+          >
+            {cardsCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+            {cardsCollapsed ? "展开卡片" : "收缩卡片"}
+          </button>
           <MemberStrip members={board.members ?? []} onOpen={() => setMemberListOpen(true)} />
         </div>
       </header>
@@ -462,6 +516,7 @@ export function BoardView({ boardId }: { boardId: number }) {
             ) : null}
             <BoardList
               list={list}
+              cardsCollapsed={cardsCollapsed}
               draggingCardId={draggingCardId}
               cardDropTarget={cardDropTarget}
               draggingListId={draggingListId}
@@ -537,6 +592,7 @@ export function BoardView({ boardId }: { boardId: number }) {
 
 function BoardList({
   list,
+  cardsCollapsed,
   draggingCardId,
   cardDropTarget,
   draggingListId,
@@ -555,6 +611,7 @@ function BoardList({
   onDragCardEnd
 }: {
   list: List;
+  cardsCollapsed: boolean;
   draggingCardId: number | null;
   cardDropTarget: CardDropTarget;
   draggingListId: number | null;
@@ -718,6 +775,7 @@ function BoardList({
             {cardDropTarget?.listId === list.id && cardDropTarget.beforeCardId === card.id ? <CardDropPlaceholder /> : null}
             <CardTile
               card={card}
+              collapsed={cardsCollapsed}
               dragging={draggingCardId === card.id}
               onOpen={() => onOpenCard(card.id)}
               onDropBefore={() => onDropCard(list.id, card.id)}
@@ -763,6 +821,7 @@ function CardDropPlaceholder() {
 
 function CardTile({
   card,
+  collapsed,
   dragging,
   onOpen,
   onDropBefore,
@@ -771,6 +830,7 @@ function CardTile({
   onDragEnd
 }: {
   card: Card;
+  collapsed: boolean;
   dragging: boolean;
   onOpen: () => void;
   onDropBefore: () => void;
@@ -806,60 +866,69 @@ function CardTile({
         dragging ? "opacity-40" : ""
       }`}
     >
-      {card.coverColor ? (
+      {card.coverColor && !collapsed ? (
         <div className="h-2 border-b border-slate-200" style={{ backgroundColor: card.coverColor }} />
       ) : null}
-      <div className="p-3">
+      <div className={collapsed ? "px-3 py-2" : "p-3"}>
         <div className="flex items-start justify-between gap-2">
-          <h3 className="min-w-0 break-words text-sm font-semibold leading-5 text-slate-950">{card.title}</h3>
+          <h3 className="min-w-0 break-words text-sm font-semibold leading-5 text-slate-950">
+            {card.title}
+            {card.owner ? (
+              <span className="ml-1 font-normal text-slate-500">· {card.owner.name}</span>
+            ) : null}
+          </h3>
           {card.priority ? <PriorityPill value={card.priority} /> : null}
         </div>
 
-        {card.summary ? (
-          <p className="mt-2 whitespace-pre-wrap break-words text-xs italic leading-5 text-red-600">{card.summary}</p>
-        ) : null}
+        {!collapsed ? (
+          <>
+            {card.summary ? (
+              <p className="mt-2 whitespace-pre-wrap break-words text-xs italic leading-5 text-red-600">{card.summary}</p>
+            ) : null}
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {card.dueDate ? (
-            <span className="inline-flex h-7 items-center gap-1 rounded-md bg-slate-100 px-2 text-xs text-slate-600">
-              <Clock className="h-3.5 w-3.5" />
-              {formatShortDate(card.dueDate)}
-            </span>
-          ) : null}
-          <span className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs font-medium ${statusClass}`}>
-            <StatusIcon className="h-3.5 w-3.5" />
-            {card.delayed ? "已延期" : "未延期"}
-          </span>
-          {card.comments?.length ? (
-            <span className="inline-flex h-7 items-center gap-1 rounded-md bg-slate-100 px-2 text-xs text-slate-600">
-              <MessageSquare className="h-3.5 w-3.5" />
-              {card.comments.length}
-            </span>
-          ) : null}
-        </div>
-
-        {card.members?.length ? (
-          <div className="mt-2 flex items-start gap-2 rounded-md bg-slate-50 px-2 py-2">
-            <Users className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-            <div className="flex min-w-0 flex-wrap gap-1">
-              {card.members.slice(0, 3).map((member) => (
-                <span key={member.id} className="truncate rounded-md bg-white px-1.5 py-0.5 text-xs text-slate-700 shadow-sm">
-                  {member.name}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {card.dueDate ? (
+                <span className="inline-flex h-7 items-center gap-1 rounded-md bg-slate-100 px-2 text-xs text-slate-600">
+                  <Clock className="h-3.5 w-3.5" />
+                  {formatShortDate(card.dueDate)}
                 </span>
-              ))}
-              {card.members.length > 3 ? (
-                <span className="rounded-md bg-white px-1.5 py-0.5 text-xs text-slate-500 shadow-sm">
-                  +{card.members.length - 3}
+              ) : null}
+              <span className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs font-medium ${statusClass}`}>
+                <StatusIcon className="h-3.5 w-3.5" />
+                {card.delayed ? "已延期" : "未延期"}
+              </span>
+              {card.comments?.length ? (
+                <span className="inline-flex h-7 items-center gap-1 rounded-md bg-slate-100 px-2 text-xs text-slate-600">
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  {card.comments.length}
                 </span>
               ) : null}
             </div>
-          </div>
-        ) : (
-          <div className="mt-2 flex h-8 items-center gap-2 rounded-md bg-slate-50 px-2 text-xs text-slate-400">
-            <Users className="h-3.5 w-3.5" />
-            未指定执行人
-          </div>
-        )}
+
+            {card.members?.length ? (
+              <div className="mt-2 flex items-start gap-2 rounded-md bg-slate-50 px-2 py-2">
+                <Users className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                <div className="flex min-w-0 flex-wrap gap-1">
+                  {card.members.slice(0, 3).map((member) => (
+                    <span key={member.id} className="truncate rounded-md bg-white px-1.5 py-0.5 text-xs text-slate-700 shadow-sm">
+                      {member.name}
+                    </span>
+                  ))}
+                  {card.members.length > 3 ? (
+                    <span className="rounded-md bg-white px-1.5 py-0.5 text-xs text-slate-500 shadow-sm">
+                      +{card.members.length - 3}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-2 flex h-8 items-center gap-2 rounded-md bg-slate-50 px-2 text-xs text-slate-400">
+                <Users className="h-3.5 w-3.5" />
+                未指定执行人
+              </div>
+            )}
+          </>
+        ) : null}
       </div>
     </article>
   );
@@ -1152,28 +1221,35 @@ function CardModal({
               <GripVertical className="h-4 w-4" />
               {list?.name ?? "列表"}
             </div>
-            <input
-              value={title}
-              onChange={(event) => {
-                markEditing();
-                setTitle(event.target.value);
-              }}
-              onBlur={() => void saveTitle()}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  event.currentTarget.blur();
-                }
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  skipTitleSaveRef.current = true;
-                  setSaveMessage("");
-                  setTitle(card.title);
-                  event.currentTarget.blur();
-                }
-              }}
-              className="block w-full rounded-md border border-transparent px-2 py-1 text-2xl font-semibold text-slate-950 outline-none focus:border-slate-300"
-            />
+            <div className="flex flex-wrap items-start gap-3">
+              <input
+                value={title}
+                onChange={(event) => {
+                  markEditing();
+                  setTitle(event.target.value);
+                }}
+                onBlur={() => void saveTitle()}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    skipTitleSaveRef.current = true;
+                    setSaveMessage("");
+                    setTitle(card.title);
+                    event.currentTarget.blur();
+                  }
+                }}
+                className="min-w-0 flex-1 rounded-md border border-transparent px-2 py-1 text-2xl font-semibold text-slate-950 outline-none focus:border-slate-300"
+              />
+              <CardOwnerSelect
+                board={board}
+                card={card}
+                onChange={(ownerId) => void request(`/cards/${card.id}`, { ownerId })}
+              />
+            </div>
             {saveError ? <p className="mt-1 px-2 text-sm text-red-700">{saveError}</p> : null}
           </div>
           <button
@@ -1494,6 +1570,38 @@ function CardModal({
         </div>
       </section>
     </div>
+  );
+}
+
+function CardOwnerSelect({
+  board,
+  card,
+  onChange
+}: {
+  board: Board;
+  card: Card;
+  onChange: (ownerId: number | null) => void;
+}) {
+  return (
+    <label className="inline-flex shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+      <Crown className="h-4 w-4 text-amber-600" />
+      <span className="text-sm font-medium text-slate-700">任务 Owner</span>
+      <select
+        value={card.ownerId ?? ""}
+        onChange={(event) => {
+          const value = event.target.value;
+          onChange(value ? Number(value) : null);
+        }}
+        className="max-w-[140px] truncate rounded-md border border-slate-300 bg-white px-2 py-1 text-sm outline-none focus:border-teal-700"
+      >
+        <option value="">未设置</option>
+        {(board.members ?? []).map((member) => (
+          <option key={member.userId} value={member.userId}>
+            {member.user.name}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

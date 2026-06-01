@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -251,18 +252,19 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Title                *string `json:"title"`
-		Description          *string `json:"description"`
-		ListID               *uint   `json:"listId"`
-		Position             *int    `json:"position"`
-		CoverColor           *string `json:"coverColor"`
-		Priority             *string `json:"priority"`
-		Summary              *string `json:"summary"`
-		StartDate            *string `json:"startDate"`
-		DueDate              *string `json:"dueDate"`
-		CompletedAt          *string `json:"completedAt"`
-		Progress             *string `json:"progress"`
-		LatestProgressRecord *string `json:"latestProgressRecord"`
+		Title                *string         `json:"title"`
+		Description          *string         `json:"description"`
+		ListID               *uint           `json:"listId"`
+		Position             *int            `json:"position"`
+		CoverColor           *string         `json:"coverColor"`
+		Priority             *string         `json:"priority"`
+		Summary              *string         `json:"summary"`
+		StartDate            *string         `json:"startDate"`
+		DueDate              *string         `json:"dueDate"`
+		CompletedAt          *string         `json:"completedAt"`
+		Progress             *string         `json:"progress"`
+		LatestProgressRecord *string         `json:"latestProgressRecord"`
+		OwnerID              json.RawMessage `json:"ownerId"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -353,6 +355,27 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.LatestProgressRecord != nil {
 		updates["latest_progress_record"] = *req.LatestProgressRecord
+	}
+	if req.OwnerID != nil {
+		if string(req.OwnerID) == "null" {
+			updates["owner_id"] = nil
+		} else {
+			var ownerID uint
+			if err := json.Unmarshal(req.OwnerID, &ownerID); err != nil {
+				errorJSON(w, http.StatusBadRequest, "invalid owner id")
+				return
+			}
+			if ownerID == 0 {
+				updates["owner_id"] = nil
+			} else {
+				var membership models.WorkspaceMember
+				if err := s.db.First(&membership, "workspace_id = ? AND user_id = ?", board.WorkspaceID, ownerID).Error; err != nil {
+					errorJSON(w, http.StatusBadRequest, "owner does not belong to workspace")
+					return
+				}
+				updates["owner_id"] = ownerID
+			}
+		}
 	}
 	if len(updates) > 0 {
 		if err := s.db.Model(&card).Updates(updates).Error; err != nil {

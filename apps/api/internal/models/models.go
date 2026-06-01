@@ -74,6 +74,8 @@ type Card struct {
 	CompletedAt          *time.Time  `json:"completedAt"`
 	Progress             string      `json:"progress"`
 	LatestProgressRecord string      `json:"latestProgressRecord"`
+	OwnerID              *uint       `gorm:"index" json:"ownerId"`
+	Owner                *User       `json:"owner,omitempty"`
 	CreatedByID          uint        `gorm:"not null" json:"createdById"`
 	Labels               []Label     `gorm:"many2many:card_labels;" json:"labels,omitempty"`
 	Members              []User      `gorm:"many2many:card_members;" json:"members,omitempty"`

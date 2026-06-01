@@ -73,6 +73,8 @@ export type Card = {
   completedAt?: string | null;
   progress: string;
   latestProgressRecord: string;
+  ownerId?: number | null;
+  owner?: User | null;
   labels?: Label[];
   members?: User[];
   checklists?: Checklist[];

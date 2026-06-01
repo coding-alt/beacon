@@ -240,6 +240,7 @@ func (s *Server) loadBoard(boardID uint) (models.Board, error) {
 		}).
 		Preload("Lists.Cards.Labels").
 		Preload("Lists.Cards.Members").
+		Preload("Lists.Cards.Owner").
 		Preload("Lists.Cards.Checklists", func(db *gorm.DB) *gorm.DB {
 			return db.Order("position ASC")
 		}).
