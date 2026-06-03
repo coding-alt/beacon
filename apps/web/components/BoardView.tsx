@@ -16,6 +16,7 @@ import {
   FileText,
   GripVertical,
   KanbanSquare,
+  Link,
   ListChecks,
   LoaderCircle,
   MessageSquare,
@@ -872,10 +873,17 @@ function CardTile({
       <div className={collapsed ? "px-3 py-2" : "p-3"}>
         <div className="flex items-start justify-between gap-2">
           <h3 className="min-w-0 break-words text-sm font-semibold leading-5 text-slate-950">
-            {card.title}
-            {card.owner ? (
-              <span className="ml-1 font-normal text-slate-500">· {card.owner.name}</span>
-            ) : null}
+            <span className="inline-flex items-start gap-1">
+              {descriptionHasLink(card.description) ? (
+                <Link className="mt-0.5 h-3.5 w-3.5 shrink-0 text-teal-600" aria-label="任务描述含链接" />
+              ) : null}
+              <span>
+                {card.title}
+                {card.owner ? (
+                  <span className="ml-1 font-normal text-slate-500">· {card.owner.name}</span>
+                ) : null}
+              </span>
+            </span>
           </h3>
           {card.priority ? <PriorityPill value={card.priority} /> : null}
         </div>
@@ -1943,4 +1951,8 @@ function formatShortDate(value: string) {
 
 function toDateInput(value?: string | null) {
   return value ? value.slice(0, 10) : "";
+}
+
+function descriptionHasLink(text: string) {
+  return /https?:\/\/[^\s]+/i.test(text) || /\bwww\.[^\s]+/i.test(text);
 }
